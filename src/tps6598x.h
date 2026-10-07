@@ -1,14 +1,16 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #ifndef TPS6598X_H
 #define TPS6598X_H
 
 #include "i2c.h"
+#include "spmi.h"
 #include "types.h"
 
 typedef struct tps6598x_dev tps6598x_dev_t;
 
-tps6598x_dev_t *tps6598x_init(const char *adt_path, i2c_dev_t *i2c);
+tps6598x_dev_t *tps6598x_init_i2c(const char *adt_path, i2c_dev_t *i2c);
+tps6598x_dev_t *tps6598x_init_spmi(const char *adt_path, spmi_dev_t *spmi);
 void tps6598x_shutdown(tps6598x_dev_t *dev);
 
 int tps6598x_command(tps6598x_dev_t *dev, const char *cmd, const u8 *data_in, size_t len_in,
