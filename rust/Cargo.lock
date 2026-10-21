@@ -81,6 +81,7 @@ name = "rust"
 version = "0.1.0"
 dependencies = [
  "fatfs",
+ "getrandom",
  "ring",
  "sha1_smol",
  "uuid",

@@ -9,6 +9,8 @@ use alloc::vec::Vec;
 use core::ffi::{c_char, c_int, c_void, CStr};
 use fatfs::{FileSystem, FsOptions, Read, Seek, SeekFrom};
 use ring::{rsa, signature};
+use getrandom::Error;
+use getrandom::register_custom_getrandom;
 use uuid::Uuid;
 
 const PUBKEY: &str = "-----BEGIN PUBLIC KEY-----
@@ -42,6 +44,12 @@ impl From<gpt::Error<nvme::Error>> for Error {
         Error::GPTError(err)
     }
 }
+
+pub fn always_fail(buf: &mut [u8]) -> Result<(), Error> {
+    Err(Error::from("rand not implemented"))
+}
+
+register_custom_getrandom!(always_fail);
 
 fn verify_signature(image_buf: &Vec<u8>, sig_buf: &Vec<u8>,  pubkey: &str) -> Result<(), Error> {
 
