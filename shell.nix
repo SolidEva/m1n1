@@ -14,6 +14,8 @@ crosspkgs.mkShell {
     rustPackages.rustc
     rustPackages.cargo
     rustPlatform.cargoSetupHook
+    rustPackages.clippy
+    pkgs.rust-analyzer
   ];
 
   shellHook = ''
