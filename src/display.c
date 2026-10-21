@@ -294,7 +294,7 @@ int display_start_dcp(void)
     if (display_get_vram(&pa, &size)) {
         // use a safe fb_size
         fb_size = cur_boot_args.video.stride * cur_boot_args.video.height *
-                  ((cur_boot_args.video.depth + 7) / 8);
+                  DIV_ROUND_UP(cur_boot_args.video.depth, 8);
     } else {
         fb_size = size;
     }
@@ -503,7 +503,7 @@ int display_configure(const char *config)
     u64 tmp_dva = 0;
 
     size_t size =
-        ALIGN_UP(tbest.width * tbest.height * ((cbest.bpp + 7) / 8) + 24 * SZ_16K, SZ_16K);
+        ALIGN_UP(tbest.width * tbest.height * DIV_ROUND_UP(cbest.bpp, 8) + 24 * SZ_16K, SZ_16K);
 
     if (fb_size < size) {
         printf("display: current framebuffer is too small for new mode\n");
@@ -532,7 +532,7 @@ int display_configure(const char *config)
             return ret;
 
         /* wait for swap durations + 1ms */
-        u32 delay = (((1000 << 16) + tbest.fps - 1) / tbest.fps) + 1;
+        u32 delay = DIV_ROUND_UP(1000 << 16, tbest.fps) + 1;
         mdelay(delay);
         dart_unmap(dcp->dart_disp, fb_dva, fb_size);
         dart_unmap(dcp->dart_dcp, fb_dva, fb_size);
@@ -658,7 +658,7 @@ int display_init(void)
         fb_clear_direct(); // Old m1n1 stage1 ends up with an ugly logo situation, clear it.
         return display_configure(NULL);
 #ifndef CHAINLOADING
-    } else if (!has_notch && firmware_sfw_in_range(V15_0B1, FW_MAX) &&
+    } else if (!has_notch && chip_id <= T8112 && firmware_sfw_in_range(V15_0B1, FW_MAX) &&
                os_firmware.version < V15_0B1) {
         printf("display: Internal display on t8103 or t8112 with Sequoia SFW, power cycling\n");
         display_needs_power_cycle = true;

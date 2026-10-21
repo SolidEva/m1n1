@@ -2551,7 +2551,7 @@ err:
     return ret;
 }
 
-__attribute__((unused)) static int dt_transfer_virtios(void)
+__maybe_unused static int dt_transfer_virtios(void)
 {
     int path[3];
     path[0] = adt_path_offset(adt, "/arm-io/");
@@ -2735,16 +2735,13 @@ struct {
     size_t wp;
 } logbuf;
 
-static bool log_console_iodev_can_write(void *opaque)
+static bool log_console_iodev_can_write(__always_unused void *opaque)
 {
-    UNUSED(opaque);
     return !!logbuf.buffer;
 }
 
-static ssize_t log_console_iodev_write(void *opaque, const void *buf, size_t len)
+static ssize_t log_console_iodev_write(__always_unused void *opaque, const void *buf, size_t len)
 {
-    UNUSED(opaque);
-
     if (!logbuf.buffer)
         return 0;
 

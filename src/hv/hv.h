@@ -8,6 +8,15 @@
 #include "types.h"
 #include "uartproxy.h"
 
+enum hv_sptm_mode {
+    SPTM_NONE = 0,
+    SPTM_EMULATION = 1,
+    SPTM_NESTED_VIRT = 2,
+};
+
+extern enum hv_sptm_mode hv_sptm_mode;
+void hv_sptm_set_mode(enum hv_sptm_mode mode);
+
 typedef bool(hv_hook_t)(struct exc_info *ctx, u64 addr, u64 *val, bool write, int width);
 
 #define MMIO_EVT_ATTR  GENMASK(31, 24)
@@ -71,6 +80,12 @@ bool hv_pa_rw(struct exc_info *ctx, u64 addr, u64 *val, bool write, int width);
 
 /* AIC events through tracing the MMIO event address */
 bool hv_trace_irq(u32 type, u32 num, u32 count, u32 flags);
+void hv_aic_init(void);
+bool hv_aic_hook(void);
+
+/* AMCC interrupt filtering */
+bool hv_amcc_init(void);
+bool hv_amcc_handle_irq(u32 irq);
 
 /* Virtual peripherals */
 void hv_vuart_poll(void);
@@ -102,7 +117,9 @@ void hv_do_panic(void);
     } while (0)
 
 /* Utilities */
+void hv_update_fiq(void);
 void hv_write_hcr(u64 val);
+void hv_write_hacr(u64 val);
 u64 hv_get_spsr(void);
 void hv_set_spsr(u64 val);
 u64 hv_get_esr(void);
@@ -111,8 +128,11 @@ u64 hv_get_elr(void);
 u64 hv_get_afsr1(void);
 void hv_set_elr(u64 val);
 
+bool hv_is_nested(void);
+
 /* HV main */
 void hv_init(void);
+bool hv_cpu_power_init(void);
 void hv_start(void *entry, u64 regs[4]);
 void hv_start_secondary(int cpu, void *entry, u64 regs[4]);
 void hv_exit_cpu(int cpu);

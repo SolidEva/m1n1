@@ -4,6 +4,7 @@
 #include "assert.h"
 #include "cpu_regs.h"
 #include "exception.h"
+#include "gxf.h"
 #include "hv_sprr.h"
 #include "iodev.h"
 #include "smp.h"
@@ -29,6 +30,7 @@ struct hv_pcpu_data {
 struct hv_pcpu_data pcpu[MAX_CPUS];
 
 void hv_exit_guest(void) __attribute__((noreturn));
+void hv_gexit(void);
 
 static u64 stolen_time = 0;
 static u64 exc_entry_time;
@@ -148,7 +150,7 @@ void hv_add_time(s64 time)
     stolen_time -= (u64)time;
 }
 
-static void hv_update_fiq(void)
+void hv_update_fiq(void)
 {
     u64 hcr = mrs(HCR_EL2);
     bool fiq_pending = false;
@@ -168,6 +170,7 @@ static void hv_update_fiq(void)
     }
 
     fiq_pending |= PERCPU(ipi_pending) || PERCPU(pmc_pending);
+    fiq_pending |= hv_sprr_timer_pending();
 
     sysop("isb");
 
@@ -206,12 +209,15 @@ static bool hv_handle_msr_unlocked(struct exc_info *ctx, u64 iss)
     regs[31] = 0;
 
     /* Don't handle any TLB maintenance here if we're running in emulated SPRR mode */
-    if (!is_read && FIELD_GET(ESR_ISS_MSR_OP0, reg) == 1 && FIELD_GET(ESR_ISS_MSR_CRn, reg) == 8 &&
+    u64 crn = FIELD_GET(ESR_ISS_MSR_CRn, reg);
+    if (!is_read && FIELD_GET(ESR_ISS_MSR_OP0, reg) == 1 &&
+        (crn == 8 || crn == 9) && /* 8 = standard , 9 = nXS */
         hv_sprr_traps_tlbi())
         return false;
 
     switch (reg) {
-        SYSREG_PASS(SYS_TPIDR2_EL0)
+        SYSREG_PASS(SYS_TPIDR2_EL0);
+        SYSREG_PASS(SYS_IMP_APL_TPIDR_GL2);
         SYSREG_PASS(SYS_IMP_APL_CORE_NRG_ACC_DAT);
         SYSREG_PASS(SYS_IMP_APL_CORE_SRM_NRG_ACC_DAT);
         /* Architectural timer, for ECV */
@@ -280,6 +286,18 @@ static bool hv_handle_msr_unlocked(struct exc_info *ctx, u64 iss)
         SYSREG_PASS(sys_reg(1, 0, 8, 5, 5)) // TLBI RVALE1OS
         SYSREG_PASS(sys_reg(1, 0, 8, 5, 7)) // TLBI RVAALE1OS
 
+        /* Outer Shareable nXS TLB maintenance instructions */
+        SYSREG_PASS(sys_reg(1, 0, 9, 1, 0)) // TLBI VMALLE1OSNXS
+        SYSREG_PASS(sys_reg(1, 0, 9, 1, 1)) // TLBI VAE1OSNXS
+        SYSREG_PASS(sys_reg(1, 0, 9, 1, 2)) // TLBI ASIDE1OSNXS
+        SYSREG_PASS(sys_reg(1, 0, 9, 1, 3)) // TLBI VAAE1OSNXS
+        SYSREG_PASS(sys_reg(1, 0, 9, 1, 5)) // TLBI VALE1OSNXS
+        SYSREG_PASS(sys_reg(1, 0, 9, 1, 7)) // TLBI VAALE1OSNXS
+        SYSREG_PASS(sys_reg(1, 0, 9, 5, 1)) // TLBI RVAE1OSNXS
+        SYSREG_PASS(sys_reg(1, 0, 9, 5, 3)) // TLBI RVAAE1OSNXS
+        SYSREG_PASS(sys_reg(1, 0, 9, 5, 5)) // TLBI RVALE1OSNXS
+        SYSREG_PASS(sys_reg(1, 0, 9, 5, 7)) // TLBI RVAALE1OSNX
+
         case SYSREG_ISS(SYS_ACTLR_EL1):
             if (is_read) {
                 if (cpu_features->actlr_el2)
@@ -346,6 +364,34 @@ static bool hv_handle_msr_unlocked(struct exc_info *ctx, u64 iss)
             return true;
     }
     return false;
+}
+
+static bool hv_handle_nested_eret(struct exc_info *ctx, bool is_gexit)
+{
+    if (FIELD_GET(ESR_EC, ctx->esr) != ESR_EC_NESTED_ERET && !is_gexit) return false;
+
+    const char* operation = is_gexit ? "GEXIT" : "ERET";
+
+    if (!hv_is_nested()) hv_panic("Tried to handle nested %s while not in nested mode\n", operation);
+
+    // Restore SPSR
+    u64 spsr = in_gl12() ? mrs(SYS_IMP_APL_SPSR_GL12) : mrs(SPSR_EL12);
+    if ((spsr & SPSR_M_EL2x) == SPSR_M_EL2x)
+    {
+        spsr &= ~SPSR_M_EL2x;
+        spsr |= SPSR_M_EL1x;
+    }
+    ctx->spsr = spsr;
+
+    if (is_gexit)
+    {
+        msr(SYS_IMP_APL_ASPSR_GL1, mrs(SYS_IMP_APL_ASPSR_GL12));
+    }
+
+    // Return to where the guest wanted to return to
+    ctx->elr = in_gl12() ? mrs(SYS_IMP_APL_ELR_GL12) : mrs(ELR_EL12);
+
+    return true;
 }
 
 static bool hv_handle_msr(struct exc_info *ctx, u64 iss)
@@ -435,6 +481,7 @@ static void hv_exc_exit(struct exc_info *ctx)
 {
     hv_wdt_breadcrumb('x');
     hv_update_fiq();
+    hv_sprr_timer_arm();
     /* reenable PMU counters */
     reg_set(SYS_IMP_APL_PMCR0, PERCPU(exc_entry_pmcr0_cnt));
     msr(CNTVOFF_EL2, stolen_time);
@@ -483,14 +530,19 @@ static void hv_dump_serror(struct exc_info *ctx)
     iodev_console_flush();
 }
 
-void hv_exc_sync(struct exc_info *ctx)
+bool hv_exc_sync(struct exc_info *ctx)
 {
     hv_wdt_breadcrumb('S');
     hv_get_context(ctx);
     bool handled = false;
     u32 ec = FIELD_GET(ESR_EC, ctx->esr);
 
+    bool do_gexit = false;
+
     switch (ec) {
+        case ESR_EC_ERET:
+            handled = hv_sprr_handle_eret(ctx);
+            break;
         case ESR_EC_MSR:
             hv_wdt_breadcrumb('m');
             handled = hv_handle_msr_unlocked(ctx, FIELD_GET(ESR_ISS, ctx->esr));
@@ -507,21 +559,28 @@ void hv_exc_sync(struct exc_info *ctx)
             hv_wdt_breadcrumb('h');
             if (hv_hvc_dispatch_unlocked(ctx, FIELD_GET(ESR_ISS, ctx->esr))) {
                 hv_wdt_breadcrumb('s');
-                return;
+                return do_gexit;
             }
             break;
     }
 
     if (handled) {
         hv_wdt_breadcrumb('#');
-        ctx->elr += 4;
-        hv_set_elr(ctx->elr);
+
+        /* A trapped ERET already contains the right target address in ELR */
+        if (ec != ESR_EC_ERET) {
+            ctx->elr += 4;
+            hv_set_elr(ctx->elr);
+        }
+
         hv_update_fiq();
         hv_wdt_breadcrumb('s');
-        return;
+        return do_gexit;
     }
 
     hv_exc_entry();
+
+    bool protect_elr = false;
 
     switch (ec) {
         case ESR_EC_DABORT_LOWER:
@@ -532,24 +591,31 @@ void hv_exc_sync(struct exc_info *ctx)
             hv_wdt_breadcrumb('M');
             handled = hv_handle_msr(ctx, FIELD_GET(ESR_ISS, ctx->esr));
             break;
+        case ESR_EC_NESTED_ERET:
+            hv_wdt_breadcrumb('N');
+            handled = protect_elr = hv_handle_nested_eret(ctx, false);
+            break;
         case ESR_EC_IMPDEF:
             hv_wdt_breadcrumb('A');
             switch (FIELD_GET(ESR_ISS, ctx->esr)) {
                 case ESR_ISS_IMPDEF_MSR:
                     handled = hv_handle_msr(ctx, ctx->afsr1);
                     break;
+                case ESR_ISS_IMPDEF_GEXIT:
+                    handled = do_gexit = protect_elr = hv_handle_nested_eret(ctx, true);
+                    break;
             }
             break;
         case ESR_EC_HVC:
             hv_wdt_breadcrumb('H');
             handled = hv_hvc_dispatch(ctx, FIELD_GET(ESR_ISS, ctx->esr));
+            protect_elr = true; // HVC alread leaves ELR past the instruction
             break;
     }
 
     if (handled) {
         hv_wdt_breadcrumb('+');
-        // HVC alread leaves ELR past the instruction
-        if (ec != ESR_EC_HVC)
+        if (!protect_elr)
             ctx->elr += 4;
     } else {
         hv_wdt_breadcrumb('-');
@@ -563,6 +629,8 @@ void hv_exc_sync(struct exc_info *ctx)
 
     hv_exc_exit(ctx);
     hv_wdt_breadcrumb('s');
+
+    return do_gexit;
 }
 
 void hv_exc_irq(struct exc_info *ctx)

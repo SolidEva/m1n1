@@ -23,15 +23,25 @@ parser.add_argument('--strip-node', action="append", default=[], metavar='SUBSTR
 parser.add_argument('-r', '--raw', action="store_true")
 parser.add_argument('-E', '--entry-point', action="store", type=int, help="Entry point for the raw image", default=0x800)
 parser.add_argument('-a', '--append-payload', type=pathlib.Path, action="append", default=[])
-parser.add_argument('-P', '--emulate-sprr', action="store_true",
-                    help='Force the EL2 SPRR/GXF emulation on.')
+parser.add_argument('--sptm-mode', choices=("none", "emulation", "nested"), default="none",
+                    help='SPTM mode: none when no SPTM guest is used, emulation for SPRR/GXF emulation.')
+parser.add_argument('--sprr-pool-size', type=int, default=2048, metavar='MiB',
+                    help='pool reservation at the top of RAM for SPRR pagetables (default: 2048 MiB).')
 parser.add_argument('-v', '--volume', type=volumespec, action='append',
                     help='Attach a 9P virtio device for file export to the guest. The argument is a host path to the '
                          'exported tree, joined by colon (\':\') with a tag under which the tree will be advertised '
                          'on the guest side.')
+parser.add_argument('-p', '--sptm', type=pathlib.Path)
+parser.add_argument('-t', '--txm', type=pathlib.Path)
 parser.add_argument('payload', type=pathlib.Path)
 parser.add_argument('boot_args', default=[], nargs="*")
 args = parser.parse_args()
+if (args.sptm or args.txm) and not (args.sptm and args.txm):
+    parser.error("--sptm and --txm must be used in conjunction")
+if args.sptm_mode == "none" and (args.sptm and args.txm):
+    parser.error("--sptm/--txm must be used together with --sptm-mode other than none")
+if args.sptm_mode != "none" and not (args.sptm and args.txm):
+    parser.error("--sptm-mode other than none must be used together with --sptm/--txm")
 
 from m1n1.proxy import *
 from m1n1.proxyutils import *
@@ -46,12 +56,18 @@ iface = UartInterface()
 p = M1N1Proxy(iface, debug=False)
 bootstrap_port(iface, p)
 
-if args.emulate_sprr or not p.get_cpu_features().apple_sysregs_unlocked:
-    m1n1_heap_mb = 1024
-else:
-    m1n1_heap_mb = 128
+def sptm_mode_arg(val):
+    if val == "none":
+        return SPTM_MODE.SPTM_NONE
+    elif val == "emulation":
+        return SPTM_MODE.SPTM_EMULATION
+    elif val == "nested":
+        return SPTM_MODE.SPTM_NESTED_VIRT
+    raise ValueError()
+args.sptm_mode = sptm_mode_arg(args.sptm_mode)
+
 u = ProxyUtils(p, heap_size = 128 * 1024 * 1024,
-               m1n1_heap = m1n1_heap_mb * 1024 * 1024)
+               m1n1_heap = 128 * 1024 * 1024)
 
 # Setup counter redirect / AHCR_EL2 as expected by macOS for macho payloads
 if not args.raw:
@@ -63,9 +79,8 @@ if not args.raw:
 hv = HV(iface, p, u)
 
 hv.hook_exceptions = args.hook_exceptions
-
-if args.emulate_sprr:
-    hv.emulate_sprr = True
+hv.sptm_mode = args.sptm_mode
+hv.sprr_pool_size = args.sprr_pool_size * 1024 * 1024
 
 hv.init()
 
@@ -122,7 +137,9 @@ if args.append_payload:
     payload = concat
 
 if args.raw:
-    hv.load_raw(payload.read(), args.entry_point)
+    hv.load_raw(payload.read(), entryoffset=args.entry_point)
+elif args.sptm:
+    hv.load_macos_sptm(args.payload, args.sptm, args.txm, symfile=symfile)
 else:
     hv.load_macho(payload, symfile=symfile)
 

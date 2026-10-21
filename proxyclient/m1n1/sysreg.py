@@ -60,6 +60,12 @@ def sysreg_parse(s):
             raise Exception(f"Unknown sysreg name {s}")
     return enc
 
+def sysreg_encode(reg, read, rt=0):
+    op0, op1, CRn, CRm, op2 = sysreg_parse(reg)
+    return ((op0 << 19) | (op1 << 16) | (CRn << 12) |
+            (CRm << 8) | (op2 << 5) | (read << 21) | rt | 0xd5000000)
+
+
 def DBGBCRn_EL1(n):
     return (2,0,0,n,5)
 
@@ -85,6 +91,7 @@ class ESR_EC(IntEnum):
     SMC            = 0b010111
     MSR            = 0b011000
     SVE            = 0b011001
+    NESTED_ERET    = 0b011010
     PAUTH_FAIL     = 0b011100
     SME            = 0b011101
     IABORT_LOWER   = 0b100000

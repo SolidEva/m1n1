@@ -146,7 +146,8 @@ typedef enum {
     P_VIRTIO_PUT_BUFFER,
     P_HV_EXIT_CPU,
     P_HV_ADD_TIME,
-    P_HV_SPRR_SET_ACTIVE,
+    P_HV_SPTM_SET_MODE,
+    P_HV_SPRR_RESERVE_POOL,
 
     P_FB_INIT = 0xd00,
     P_FB_SHUTDOWN,

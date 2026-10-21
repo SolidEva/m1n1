@@ -67,6 +67,12 @@ class EXC_RET(IntEnum):
     EXIT_GUEST = 3
     STEP = 4
 
+# Must match enum hv_sptm_mode in src/hv/hv.h
+class SPTM_MODE(IntEnum):
+    SPTM_NONE = 0
+    SPTM_EMULATION = 1
+    SPTM_NESTED_VIRT = 2
+
 class DCP_SHUTDOWN_MODE(IntEnum):
     QUIESCED = 0
     SLEEP_IF_EXTERNAL = 1
@@ -661,7 +667,8 @@ class M1N1Proxy(Reloadable):
     P_VIRTIO_PUT_BUFFER = 0xc0e
     P_HV_EXIT_CPU = 0xc0f
     P_HV_ADD_TIME = 0xc10
-    P_HV_SPRR_SET_ACTIVE = 0xc11
+    P_HV_SPTM_SET_MODE = 0xc11
+    P_HV_SPRR_RESERVE_POOL = 0xc12
 
     P_FB_INIT = 0xd00
     P_FB_SHUTDOWN = 0xd01
@@ -1152,8 +1159,11 @@ class M1N1Proxy(Reloadable):
         return self.request(self.P_HV_EXIT_CPU, cpu)
     def hv_add_time(self, time):
         return self.request(self.P_HV_ADD_TIME, time)
-    def hv_sprr_set_active(self, active):
-        return self.request(self.P_HV_SPRR_SET_ACTIVE, int(bool(active)))
+    def hv_sptm_set_mode(self, mode):
+        return self.request(self.P_HV_SPTM_SET_MODE, SPTM_MODE(mode))
+
+    def hv_sprr_reserve_pool(self, size):
+        return self.request(self.P_HV_SPRR_RESERVE_POOL, size)
 
     def fb_init(self):
         return self.request(self.P_FB_INIT)
