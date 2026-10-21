@@ -13,6 +13,7 @@
 #include "xnuboot.h"
 
 #ifdef CHAINLOADING
+
 int rust_load_image(const char *spec, void **image, size_t *size);
 #endif
 
