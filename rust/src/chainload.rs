@@ -73,6 +73,7 @@ fn verify_signature(image_buf: &Vec<u8>, sig_buf: &[u8], pubkey: &str) -> Result
 }
 
 fn read_file(fs: &FileSystem<nvme::NVMEStorage>, path: &str) -> Result<Vec<u8>, Error> {
+    println!("Reading: {}", path);
     let mut file = fs.root_dir().open_file(path)?;
 
     let size = file.seek(SeekFrom::End(0))? as usize;
