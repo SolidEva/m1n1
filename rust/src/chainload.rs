@@ -12,15 +12,21 @@ use uuid::Uuid;
 #[cfg(feature = "secureboot")]
 use rsa::{pkcs8::DecodePublicKey, sha2::{Digest, Sha512}, signature::SignatureEncoding, Pkcs1v15Sign};
 
-const PUBKEY: &str = "-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0CGvmv+fltzgJfW4g32Q
-bbxQzI76Ou+s8DKyNNUPlBRnahCMDaMtF7NwdRiU98nSHaClTk0WXRw3iTBGSdg3
-1Xvej5Kh26i8g0FHfBNXTP8BuIqAGgcnw7kYhAY+wOA/JMmNf3ncCn7Hqea6CJ9+
-kUFXnpF1C7N5XrFxJWKR5UstrOh3jBleoUdYxNO1J/6FegtGYzJXUgM0CiuPrzqW
-w4+YkX59mhkv8+wHuiGt1BD/nUdWqLIXKeH/Az4sjJFJftbDefPvBNZs/yLg86PA
-+TIIccbADK7iGFuF0MupitQKzYBx5KKvNBSj4fdFDyyNtpIxh3XzSixCODkCVa5c
-6wIDAQAB
------END PUBLIC KEY-----";
+#[cfg(feature = "secureboot")]
+#[derive(Debug)]
+pub enum KeyType {
+    RsaSha512
+}
+
+#[cfg(feature = "secureboot")]
+impl KeyType {
+    fn from(keytype: &str) -> Result<KeyType, Error> {
+        match str::to_lowercase(keytype).as_ref() {
+            "rsa-sha512" => Ok(KeyType::RsaSha512),
+            _ => Err(Error::UnsupportedKeyType),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum Error {
@@ -31,6 +37,7 @@ pub enum Error {
     RsaPublicKeyError(rsa::pkcs8::spki::Error),
     RsaSignatureFileError(rsa::signature::Error),
     BadSignature(rsa::Error),
+    UnsupportedKeyType,
     Unknown,
 }
 
@@ -65,13 +72,21 @@ impl From<rsa::signature::Error> for Error {
 }
 
 #[cfg(feature = "secureboot")]
-fn verify_signature(image_buf: &Vec<u8>, sig_buf: &[u8], pubkey: &str) -> Result<(), Error> {
+fn verify_signature(image_buf: &Vec<u8>, sig_buf: &[u8], pubkey_type: &KeyType, pubkey: &str) -> Result<(), Error> {
+    match pubkey_type {
+        KeyType::RsaSha512 => verify_rsa_signature(image_buf, sig_buf, pubkey)?,
+    };
+    println!("Image signature validated");
+    Ok(())
+}
+
+#[cfg(feature = "secureboot")]
+fn verify_rsa_signature(image_buf: &Vec<u8>, sig_buf: &[u8], pubkey: &str) -> Result<(), Error> {
     let signature = rsa::pkcs1v15::Signature::try_from(sig_buf)?;
     let scheme = Pkcs1v15Sign::new::<Sha512>();
     let hash = Sha512::digest(image_buf);
     let key = rsa::RsaPublicKey::from_public_key_pem(pubkey)?;
     key.verify(scheme, &hash, signature.to_bytes().as_ref())?;
-    println!("Image signature validated");
     Ok(())
 }
 
@@ -125,9 +140,11 @@ fn load_image(spec: &str) -> Result<Vec<u8>, Error> {
     let image_buf = read_file(&fs, &path)?;
 
     #[cfg(feature = "secureboot")]
-    {
-        let sig_buf = read_file(&fs, format!("{path}.sig").as_ref())?;
-        verify_signature(&image_buf, &sig_buf, PUBKEY)?;
+    if let Some(pubkey_type_str) = args.next() {
+            let pubkey_type = KeyType::from(pubkey_type_str)?;
+            let pubkey = args.next().ok_or(Error::BadArgs)?;
+            let sig_buf = read_file(&fs, format!("{path}.sig").as_ref())?;
+            verify_signature(&image_buf, &sig_buf, &pubkey_type, &pubkey)?;
     }
 
     Ok(image_buf)
