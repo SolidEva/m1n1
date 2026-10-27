@@ -140,11 +140,11 @@ fn load_image(spec: &str) -> Result<Vec<u8>, Error> {
     let image_buf = read_file(&fs, &path)?;
 
     #[cfg(feature = "secureboot")]
-    if let Some(pubkey_type_str) = args.next() {
-            let pubkey_type = KeyType::from(pubkey_type_str)?;
-            let pubkey = args.next().ok_or(Error::BadArgs)?;
-            let sig_buf = read_file(&fs, format!("{path}.sig").as_ref())?;
-            verify_signature(&image_buf, &sig_buf, &pubkey_type, &pubkey)?;
+    {
+        let pubkey_type = KeyType::from(args.next().ok_or(Error::BadArgs)?)?;
+        let pubkey = args.next().ok_or(Error::BadArgs)?;
+        let sig_buf = read_file(&fs, format!("{path}.sig").as_ref())?;
+        verify_signature(&image_buf, &sig_buf, &pubkey_type, &pubkey)?;
     }
 
     Ok(image_buf)
