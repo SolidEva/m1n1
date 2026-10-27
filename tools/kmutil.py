@@ -25,7 +25,16 @@ set -e
 boot_disk=$(bless --getboot)
 system_dir=$(diskutil info -plist ${boot_disk} | plutil -extract MountPoint raw -)
 
-"${system_dir}"/usr/bin/uudecode <<EOF_M1N1
+if [ -f "${system_dir}"/usr/bin/uudecode ]; then
+    uudecode="${system_dir}"/usr/bin/uudecode
+elif [ -f /Volumes/Macintosh\ HD/usr/bin/uudecode ]; then
+    uudecode=/Volumes/Macintosh\ HD/usr/bin/uudecode
+else
+    echo "Unable to find uudecode binary, cannot decode m1n1.bin"
+    exit 1
+fi
+
+"${uudecode}" <<EOF_M1N1
 begin-base64 644 m1n1.bin
 '''
 
