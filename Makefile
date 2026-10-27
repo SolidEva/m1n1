@@ -89,6 +89,11 @@ CFG += CHAINLOADING
 CARGO_FLAGS += --features chainload
 endif
 
+ifeq ($(SECUREBOOT),1)
+CFG += SECUREBOOT
+CARGO_FLAGS += --features secureboot
+endif
+
 LDFLAGS := -EL -maarch64elf --no-undefined -X -Bsymbolic \
 	-z notext --no-apply-dynamic-relocs --orphan-handling=warn \
 	-z nocopyreloc --gc-sections -pie

@@ -8,8 +8,9 @@ use crate::println;
 use alloc::vec::Vec;
 use core::ffi::{c_char, c_int, c_void, CStr};
 use fatfs::{FileSystem, FsOptions, Read, Seek, SeekFrom};
-use rsa::{pkcs8::DecodePublicKey, sha2::{Digest, Sha512}, signature::SignatureEncoding, Pkcs1v15Sign};
 use uuid::Uuid;
+#[cfg(feature = "secureboot")]
+use rsa::{pkcs8::DecodePublicKey, sha2::{Digest, Sha512}, signature::SignatureEncoding, Pkcs1v15Sign};
 
 const PUBKEY: &str = "-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0CGvmv+fltzgJfW4g32Q
@@ -63,12 +64,14 @@ impl From<rsa::signature::Error> for Error {
     }
 }
 
+#[cfg(feature = "secureboot")]
 fn verify_signature(image_buf: &Vec<u8>, sig_buf: &[u8], pubkey: &str) -> Result<(), Error> {
     let signature = rsa::pkcs1v15::Signature::try_from(sig_buf)?;
     let scheme = Pkcs1v15Sign::new::<Sha512>();
     let hash = Sha512::digest(image_buf);
     let key = rsa::RsaPublicKey::from_public_key_pem(pubkey)?;
     key.verify(scheme, &hash, signature.to_bytes().as_ref())?;
+    println!("Image signature validated");
     Ok(())
 }
 
@@ -120,11 +123,12 @@ fn load_image(spec: &str) -> Result<Vec<u8>, Error> {
     let fs = FileSystem::new(storage, opts)?;
 
     let image_buf = read_file(&fs, &path)?;
-    let sig_buf = read_file(&fs, format!("{path}.sig").as_ref())?;
 
-    verify_signature(&image_buf, &sig_buf, PUBKEY)?;
-
-    println!("Image signature validated");
+    #[cfg(feature = "secureboot")]
+    {
+        let sig_buf = read_file(&fs, format!("{path}.sig").as_ref())?;
+        verify_signature(&image_buf, &sig_buf, PUBKEY)?;
+    }
 
     Ok(image_buf)
 }

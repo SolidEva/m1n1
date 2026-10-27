@@ -19,3 +19,4 @@ versions = { path = "./versions" }
 
 [features]
 chainload = ["dep:fatfs", "dep:uuid"]
+secureboot = ["chainload"]
