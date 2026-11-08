@@ -11,6 +11,7 @@ crate-type = [ "staticlib" ]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 fatfs = { git = "https://github.com/rafalh/rust-fatfs", rev = "4eccb50d011146fbed20e133d33b22f3c27292e7", default-features = false, features = ["lfn", "alloc"], optional = true }
 rsa = { version = "0.9.10", default-features = false, features = ["pem", "pkcs5", "sha2", "u64_digit"] }
 sha1_smol = { version = "1.0.1" }

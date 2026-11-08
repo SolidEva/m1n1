@@ -11,6 +11,10 @@ use fatfs::{FileSystem, FsOptions, Read, Seek, SeekFrom};
 use uuid::Uuid;
 #[cfg(feature = "secureboot")]
 use rsa::{pkcs8::DecodePublicKey, sha2::{Digest, Sha512}, signature::SignatureEncoding, Pkcs1v15Sign};
+#[cfg(feature = "secureboot")]
+use base64::prelude::*;
+#[cfg(feature = "secureboot")]
+use alloc::string::{FromUtf8Error, String};
 
 #[cfg(feature = "secureboot")]
 #[derive(Debug)]
@@ -37,6 +41,8 @@ pub enum Error {
     RsaPublicKeyError(rsa::pkcs8::spki::Error),
     RsaSignatureFileError(rsa::signature::Error),
     BadSignature(rsa::Error),
+    BadPublicKeyUtf8EncodingError(FromUtf8Error),
+    BadPublicKeyBase64EncodingError(base64::DecodeError),
     UnsupportedKeyType,
     Unknown,
 }
@@ -71,6 +77,18 @@ impl From<rsa::signature::Error> for Error {
     }
 }
 
+impl From<FromUtf8Error> for Error {
+    fn from(err: FromUtf8Error) -> Error {
+        Error::BadPublicKeyUtf8EncodingError(err)
+    }
+}
+
+impl From<base64::DecodeError> for Error {
+    fn from(err: base64::DecodeError) -> Error {
+        Error::BadPublicKeyBase64EncodingError(err)
+    }
+}
+
 #[cfg(feature = "secureboot")]
 fn verify_signature(image_buf: &Vec<u8>, sig_buf: &[u8], pubkey_type: &KeyType, pubkey: &str) -> Result<(), Error> {
     match pubkey_type {
@@ -82,10 +100,10 @@ fn verify_signature(image_buf: &Vec<u8>, sig_buf: &[u8], pubkey_type: &KeyType, 
 
 #[cfg(feature = "secureboot")]
 fn verify_rsa_signature(image_buf: &Vec<u8>, sig_buf: &[u8], pubkey: &str) -> Result<(), Error> {
+    let key = rsa::RsaPublicKey::from_public_key_pem(&String::from_utf8(BASE64_STANDARD.decode(pubkey)?)?)?;
     let signature = rsa::pkcs1v15::Signature::try_from(sig_buf)?;
     let scheme = Pkcs1v15Sign::new::<Sha512>();
     let hash = Sha512::digest(image_buf);
-    let key = rsa::RsaPublicKey::from_public_key_pem(pubkey)?;
     key.verify(scheme, &hash, signature.to_bytes().as_ref())?;
     Ok(())
 }
