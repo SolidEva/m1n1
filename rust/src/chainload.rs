@@ -9,6 +9,7 @@ use alloc::vec::Vec;
 use core::ffi::{c_char, c_int, c_void, CStr};
 use fatfs::{FileSystem, FsOptions, Read, Seek, SeekFrom};
 use uuid::Uuid;
+
 #[cfg(feature = "secureboot")]
 use rsa::{pkcs8::DecodePublicKey, sha2::{Digest, Sha512}, signature::SignatureEncoding, Pkcs1v15Sign};
 #[cfg(feature = "secureboot")]
@@ -41,7 +42,7 @@ pub enum Error {
     RsaPublicKeyError(rsa::pkcs8::spki::Error),
     RsaSignatureFileError(rsa::signature::Error),
     BadSignature(rsa::Error),
-    BadPublicKeyUtf8EncodingError(FromUtf8Error),
+    BadPublicKeyUtf8EncodingError(alloc::string::FromUtf8Error),
     BadPublicKeyBase64EncodingError(base64::DecodeError),
     UnsupportedKeyType,
     Unknown,
@@ -77,8 +78,8 @@ impl From<rsa::signature::Error> for Error {
     }
 }
 
-impl From<FromUtf8Error> for Error {
-    fn from(err: FromUtf8Error) -> Error {
+impl From<alloc::string::FromUtf8Error> for Error {
+    fn from(err: alloc::string::FromUtf8Error) -> Error {
         Error::BadPublicKeyUtf8EncodingError(err)
     }
 }
