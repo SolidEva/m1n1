@@ -91,7 +91,9 @@ endif
 
 ifeq ($(SECUREBOOT),1)
 CFG += SECUREBOOT
+CFG += CHAINLOADING
 CARGO_FLAGS += --features secureboot
+CARGO_FLAGS += --features chainload
 endif
 
 LDFLAGS := -EL -maarch64elf --no-undefined -X -Bsymbolic \
